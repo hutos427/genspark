@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 
-type Bindings = { DB: D1Database }
+type Bindings = { DB: D1Database; OPENAI_API_KEY: string; OPENAI_BASE_URL?: string }
 type Vars = { uid: number }
 const app = new Hono<{ Bindings: Bindings; Variables: Vars }>()
 
@@ -105,12 +105,52 @@ app.put('/api/me/password', async (c) => {
   return c.json({ ok: true })
 })
 
+// ---------- AI food photo calorie analysis ----------
+app.post('/api/meals/analyze', async (c) => {
+  const { image, hint } = await c.req.json()
+  if (!c.env.OPENAI_API_KEY) return c.json({ error: 'AI API 키가 설정되지 않았습니다.' }, 500)
+  if (typeof image !== 'string' || !/^data:image\/(jpeg|png|webp|gif);base64,/.test(image))
+    return c.json({ error: '이미지 형식이 올바르지 않습니다.' }, 400)
+  if (image.length > 4_000_000) return c.json({ error: '이미지가 너무 큽니다.' }, 413)
+  const prompt = `당신은 영양사입니다. 사진 속 음식을 분석해 각 음식의 1인분 섭취량 기준 칼로리와 영양소를 추정하세요.
+그릇 크기, 양, 조리법(튀김/볶음 등)을 고려하세요. 비빔밥·찌개·덮밥처럼 하나의 요리는 재료로 쪼개지 말고 요리 단위 1개 항목으로, 밥·국·반찬처럼 따로 담긴 것은 각각 항목으로 나누세요(최대 8개). 음식이 아니면 is_food=false.
+${hint ? `사용자 메모: ${String(hint).slice(0, 200)}\n` : ''}반드시 아래 JSON 형식으로만 한국어로 답하세요:
+{"is_food":true,"items":[{"name":"음식명","amount":"추정 양(예: 1공기 210g)","calories":0,"carbs":0,"protein":0,"fat":0}],"total_calories":0,"confidence":"높음|보통|낮음","comment":"한 줄 영양 코멘트"}`
+  const base = (c.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')
+  try {
+    const r = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.env.OPENAI_API_KEY}` },
+      body: JSON.stringify({
+        model: 'gpt-5-mini',
+        reasoning_effort: 'low',
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: image } }] }],
+      }),
+    })
+    if (!r.ok) return c.json({ error: `AI 분석 실패 (${r.status})` }, 502)
+    const data: any = await r.json()
+    const out = JSON.parse(data.choices?.[0]?.message?.content || '{}')
+    if (out.is_food === false || !Array.isArray(out.items) || !out.items.length)
+      return c.json({ error: '음식을 인식하지 못했습니다. 다른 사진을 시도해주세요.' }, 422)
+    const num = (v: any) => Math.max(0, Math.round(Number(v) || 0))
+    const items = out.items.slice(0, 10).map((i: any) => ({
+      name: String(i.name || '음식').slice(0, 60), amount: String(i.amount || '').slice(0, 40),
+      calories: num(i.calories), carbs: num(i.carbs), protein: num(i.protein), fat: num(i.fat),
+    }))
+    return c.json({ items, total: items.reduce((a: number, b: any) => a + b.calories, 0),
+      confidence: out.confidence || '보통', comment: String(out.comment || '').slice(0, 200) })
+  } catch (e: any) {
+    return c.json({ error: 'AI 분석 중 오류가 발생했습니다.' }, 502)
+  }
+})
+
 // ---------- generic CRUD ----------
 const tables: Record<string, string[]> = {
   schedules: ['date', 'time', 'title', 'memo', 'done'],
   sleep: ['date', 'bed_time', 'wake_time', 'duration_min', 'quality', 'states', 'memo'],
   workouts: ['date', 'type', 'duration_min', 'calories', 'intensity', 'memo'],
-  meals: ['date', 'meal_type', 'food', 'calories', 'protein', 'carbs', 'fat'],
+  meals: ['date', 'meal_type', 'food', 'calories', 'protein', 'carbs', 'fat', 'photo', 'ai'],
   inbody: ['date', 'weight', 'muscle', 'fat_mass', 'fat_pct', 'bmi', 'bmr'],
   goals: ['kind', 'month', 'deadline', 'title', 'target', 'current', 'unit', 'done'],
 }

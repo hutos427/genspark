@@ -182,7 +182,8 @@ async function renderHome(el) {
         <button class="text-slate-300" data-del="workouts/${w.id}"><i class="fas fa-trash"></i></button></div>`).join('') : '<p class="empty">운동 기록이 없습니다</p>'}</section>
 
     <section class="card" id="meal-card"><div class="card-title"><span><i class="fas fa-bowl-food text-red-500 mr-1"></i> 식단 칼로리</span>
-      <button class="btn btn-ghost btn-sm" data-goto="health" data-htab="diet">식단 관리</button></div>
+      <div class="flex gap-1"><label class="btn btn-ghost btn-sm cursor-pointer"><i class="fas fa-camera"></i> AI<input type="file" accept="image/*" class="hidden" data-photo></label>
+      <button class="btn btn-ghost btn-sm" data-goto="health" data-htab="diet">식단 관리</button></div></div>
       ${['아침', '점심', '저녁', '간식'].map((t) => { const k = sum.meals.filter((m) => m.meal_type === t).reduce((a, b) => a + (b.calories || 0), 0)
         return `<div class="flex justify-between text-sm py-1"><span class="text-slate-500">${t}</span><b>${k} kcal</b></div>` }).join('')}
       <div class="flex justify-between border-t mt-2 pt-2"><b>합계</b><b class="text-red-500">${mKcal.toLocaleString()} kcal</b></div></section>
@@ -199,6 +200,7 @@ async function renderHome(el) {
   bind(el, '[data-days]', 'click', (n) => { S.statDays = Number(n.dataset.days); render() })
   bind(el, '[data-metric]', 'click', (n) => { S.statMetric = n.dataset.metric; render() })
   bind(el, '[data-goto]', 'click', (n) => { S.tab = n.dataset.goto; if (n.dataset.htab) S.healthTab = n.dataset.htab; render() })
+  bind(el, '[data-photo]', 'change', (n) => { const f = n.files[0]; n.value = ''; if (f) aiPhotoFlow(f) })
   bind(el, '[data-del]', 'click', async (n) => { if (!confirm('삭제할까요?')) return; await api('/' + n.dataset.del, { method: 'DELETE' }); render() })
   bind(el, '[data-sdone]', 'change', async (n) => { await api(`/schedules/${n.dataset.sdone}`, { method: 'PUT', body: { done: n.checked ? 1 : 0 } }); render() })
   el.querySelector('#add-schedule').onclick = () => modal('일정 추가', field('날짜', 'date', 'date', S.date, 'required') + field('제목', 'title', 'text', '', 'required') +
@@ -298,6 +300,76 @@ async function renderAI(body) {
 
 const FOODS = [['쌀밥 1공기', 300, 6, 66, 1], ['현미밥 1공기', 290, 6, 61, 2], ['닭가슴살 100g', 165, 31, 0, 4], ['계란 1개', 75, 6, 1, 5], ['고구마 1개', 130, 2, 31, 0],
   ['바나나 1개', 90, 1, 23, 0], ['샐러드', 120, 3, 10, 7], ['김치찌개', 250, 15, 12, 15], ['비빔밥', 550, 18, 85, 15], ['라면', 500, 10, 79, 16], ['프로틴쉐이크', 130, 24, 4, 2], ['우유 200ml', 130, 6, 10, 7]]
+// ---- AI photo calorie flow ----
+function resizeImage(file, max, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file)
+    img.onload = () => { const r = Math.min(1, max / Math.max(img.width, img.height))
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width * r); cv.height = Math.round(img.height * r)
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); resolve(cv.toDataURL('image/jpeg', quality)) }
+    img.onerror = () => reject(new Error('이미지를 읽을 수 없습니다'))
+    img.src = url
+  })
+}
+function guessMealType() { const h = new Date().getHours(); return h < 10 ? '아침' : h < 15 ? '점심' : h < 21 ? '저녁' : '간식' }
+async function aiPhotoFlow(file) {
+  if (!file.type.startsWith('image/')) return toast('이미지 파일만 가능합니다')
+  let full, thumb
+  try { [full, thumb] = await Promise.all([resizeImage(file, 1024, 0.85), resizeImage(file, 240, 0.7)]) } catch (e) { return toast(e.message) }
+  closeModal()
+  const bg = document.createElement('div'); bg.className = 'modal-bg'
+  bg.innerHTML = `<div class="modal" id="ai-modal"><div class="flex justify-between items-center mb-3"><h3 class="text-lg font-bold"><i class="fas fa-wand-magic-sparkles text-violet-500"></i> AI 칼로리 분석</h3>
+    <button type="button" class="text-slate-400 text-xl" data-close><i class="fas fa-xmark"></i></button></div>
+    <img src="${full}" class="w-full max-h-64 object-cover rounded-2xl" alt="음식 사진">
+    <div class="flex gap-2 mt-3"><input class="input flex-1" id="ai-hint" placeholder="(선택) 메모: 예) 밥 반공기, 소스 없음"><button class="btn btn-primary !w-auto" id="ai-run"><i class="fas fa-magnifying-glass"></i> 분석</button></div>
+    <div id="ai-result" class="mt-3"></div></div>`
+  bg.addEventListener('click', (e) => { if (e.target === bg || e.target.closest('[data-close]')) bg.remove() })
+  document.body.appendChild(bg)
+  const box = bg.querySelector('#ai-result')
+  const run = async () => {
+    box.innerHTML = `<div class="text-center py-8 text-slate-500"><div class="ai-spinner"></div><p class="mt-3 text-sm">AI가 음식을 분석하고 있어요...</p><p class="text-xs text-slate-400">약 5~15초 소요</p></div>`
+    bg.querySelector('#ai-run').disabled = true
+    try { const r = await api('/meals/analyze', { method: 'POST', body: { image: full, hint: bg.querySelector('#ai-hint').value } }); showResult(r) }
+    catch (e) { box.innerHTML = `<div class="stat-box text-center text-red-500 text-sm"><i class="fas fa-circle-exclamation"></i> ${esc(e.message)}</div>` }
+    finally { bg.querySelector('#ai-run').disabled = false }
+  }
+  const showResult = (r) => {
+    const items = r.items.map((i) => ({ ...i, on: true }))
+    const draw = () => {
+      const sel = items.filter((i) => i.on), tot = sel.reduce((a, i) => ({ k: a.k + i.calories, c: a.c + i.carbs, p: a.p + i.protein, f: a.f + i.fat }), { k: 0, c: 0, p: 0, f: 0 })
+      box.innerHTML = `<div class="stat-box bg-gradient-to-br from-indigo-50 to-violet-50 text-center">
+        <p class="text-xs text-slate-500">총 추정 칼로리 <span class="ai-badge">신뢰도 ${esc(r.confidence)}</span></p>
+        <b class="text-3xl text-indigo-600">${tot.k.toLocaleString()}</b> <span class="text-slate-500">kcal</span>
+        <p class="text-xs text-slate-500 mt-1">탄 ${tot.c}g · 단 ${tot.p}g · 지 ${tot.f}g</p></div>
+        ${r.comment ? `<p class="text-xs text-slate-600 bg-amber-50 rounded-lg p-2 mt-2"><i class="fas fa-lightbulb text-amber-500"></i> ${esc(r.comment)}</p>` : ''}
+        <p class="text-xs text-slate-500 mt-3 mb-1">인식된 음식 (칼로리 수정 가능, 체크 해제 시 제외)</p>
+        ${items.map((i, k) => `<div class="list-item"><input type="checkbox" class="w-5 h-5 accent-indigo-500" data-ion="${k}" ${i.on ? 'checked' : ''}>
+          <div class="flex-1 ${i.on ? '' : 'opacity-40'}"><b class="text-sm">${esc(i.name)}</b><p class="text-xs text-slate-400">${esc(i.amount)} · 탄${i.carbs} 단${i.protein} 지${i.fat}</p></div>
+          <input type="number" class="input !w-20 !py-1 text-right text-sm" data-ikcal="${k}" value="${i.calories}"><span class="text-xs text-slate-400">kcal</span></div>`).join('')}
+        <div class="grid grid-cols-2 gap-2 mt-3"><div><label class="label !mt-0">날짜</label><input type="date" class="input" id="ai-date" value="${S.date}"></div>
+        <div><label class="label !mt-0">끼니</label><select class="input" id="ai-type">${['아침', '점심', '저녁', '간식'].map((t) => `<option ${t === (S.aiMealType || guessMealType()) ? 'selected' : ''}>${t}</option>`).join('')}</select></div></div>
+        <button class="btn btn-primary mt-4" id="ai-save" ${sel.length ? '' : 'disabled'}><i class="fas fa-check"></i> 식단에 기록하기</button>
+        <p class="text-[11px] text-slate-400 text-center mt-2">AI 추정치이며 실제와 다를 수 있습니다.</p>`
+      box.querySelectorAll('[data-ion]').forEach((c) => (c.onchange = () => { items[c.dataset.ion].on = c.checked; draw() }))
+      box.querySelectorAll('[data-ikcal]').forEach((c) => (c.onchange = () => {
+        const it = items[c.dataset.ikcal], nv = Math.max(0, Math.round(+c.value || 0)), ratio = it.calories ? nv / it.calories : 1
+        it.carbs = Math.round(it.carbs * ratio); it.protein = Math.round(it.protein * ratio); it.fat = Math.round(it.fat * ratio); it.calories = nv; draw() }))
+      box.querySelector('#ai-save').onclick = async (e) => {
+        e.target.disabled = true
+        const date = box.querySelector('#ai-date').value, meal_type = box.querySelector('#ai-type').value
+        try {
+          for (const [k, i] of sel.entries())
+            await api('/meals', { method: 'POST', body: { date, meal_type, food: i.amount ? `${i.name} (${i.amount})` : i.name, calories: i.calories, carbs: i.carbs, protein: i.protein, fat: i.fat, ai: 1, photo: k === 0 ? thumb : null } })
+          bg.remove(); S.date = date; S.calMonth = date.slice(0, 7); toast(`${tot.k}kcal 기록 완료!`); render()
+        } catch (err) { toast(err.message); e.target.disabled = false }
+      }
+    }
+    draw()
+  }
+  bg.querySelector('#ai-run').onclick = run
+  run()
+}
+
 async function renderDiet(body) {
   const meals = await api(`/meals?from=${S.date}&to=${S.date}`)
   const tot = meals.reduce((a, m) => ({ k: a.k + (m.calories || 0), p: a.p + (m.protein || 0), c: a.c + (m.carbs || 0), f: a.f + (m.fat || 0) }), { k: 0, p: 0, c: 0, f: 0 })
@@ -309,14 +381,24 @@ async function renderDiet(body) {
     <div class="grid grid-cols-3 gap-2 text-center text-sm mt-3"><div class="stat-box"><p class="text-xs text-slate-500">탄수화물</p><b>${tot.c.toFixed(0)}g</b></div>
     <div class="stat-box"><p class="text-xs text-slate-500">단백질</p><b>${tot.p.toFixed(0)}g</b></div><div class="stat-box"><p class="text-xs text-slate-500">지방</p><b>${tot.f.toFixed(0)}g</b></div></div>
     <div class="h-40 mt-3"><canvas id="macro-chart"></canvas></div></section>
+    <section class="card ai-photo-card" id="ai-photo-card"><div class="flex items-center gap-3">
+      <div class="w-12 h-12 rounded-2xl header-grad flex items-center justify-center text-xl"><i class="fas fa-camera"></i></div>
+      <div class="flex-1"><b>AI 사진 칼로리 측정</b><p class="text-xs text-slate-500">음식 사진을 올리면 AI가 칼로리·영양소를 분석해요</p></div></div>
+      <div class="grid grid-cols-2 gap-2 mt-3">
+        <label class="btn btn-primary text-center cursor-pointer text-sm"><i class="fas fa-camera"></i> 촬영하기<input type="file" accept="image/*" capture="environment" class="hidden" data-photo></label>
+        <label class="btn btn-ghost text-center cursor-pointer text-sm"><i class="fas fa-image"></i> 앨범에서 선택<input type="file" accept="image/*" class="hidden" data-photo></label></div></section>
     ${['아침', '점심', '저녁', '간식'].map((t) => { const ms = meals.filter((m) => m.meal_type === t)
       return `<section class="card"><div class="card-title"><span>${{ 아침: '🌅', 점심: '☀️', 저녁: '🌙', 간식: '🍪' }[t]} ${t} <span class="text-xs text-slate-400 font-normal">${ms.reduce((a, b) => a + (b.calories || 0), 0)}kcal</span></span>
       <button class="btn btn-ghost btn-sm" data-addmeal="${t}"><i class="fas fa-plus"></i></button></div>
-      ${ms.length ? ms.map((m) => `<div class="list-item"><div class="flex-1"><b class="text-sm">${esc(m.food)}</b><p class="text-xs text-slate-400">탄 ${m.carbs ?? 0}g · 단 ${m.protein ?? 0}g · 지 ${m.fat ?? 0}g</p></div>
+      ${ms.length ? ms.map((m) => `<div class="list-item">${m.photo ? `<img src="${m.photo}" class="meal-thumb" data-viewphoto="${m.id}" alt="${esc(m.food)}">` : ''}<div class="flex-1"><b class="text-sm">${esc(m.food)}</b>${m.ai ? ' <span class="ai-badge">AI</span>' : ''}<p class="text-xs text-slate-400">탄 ${m.carbs ?? 0}g · 단 ${m.protein ?? 0}g · 지 ${m.fat ?? 0}g</p></div>
         <b class="text-sm">${m.calories}kcal</b><button class="text-slate-300 ml-2" data-delmeal="${m.id}"><i class="fas fa-trash"></i></button></div>`).join('') : '<p class="empty">기록 없음</p>'}</section>` }).join('')}`
   body.querySelector('#diet-date').onchange = (e) => { S.date = e.target.value; S.calMonth = S.date.slice(0, 7); render() }
   bind(body, '[data-delmeal]', 'click', async (n) => { await api(`/meals/${n.dataset.delmeal}`, { method: 'DELETE' }); render() })
+  bind(body, '[data-photo]', 'change', (n) => { const f = n.files[0]; n.value = ''; if (f) aiPhotoFlow(f) })
+  bind(body, '[data-viewphoto]', 'click', (n) => { const bg = document.createElement('div'); bg.className = 'modal-bg !items-center'
+    bg.innerHTML = `<img src="${n.src}" class="max-w-[92%] max-h-[80vh] rounded-2xl">`; bg.onclick = () => bg.remove(); document.body.appendChild(bg) })
   bind(body, '[data-addmeal]', 'click', (n) => {
+    S.aiMealType = n.dataset.addmeal
     modal(`${n.dataset.addmeal} 식단 추가`, `<label class="label">빠른 선택</label><div id="quick-foods">${FOODS.map((f, i) => `<span class="chip" data-food="${i}">${f[0]}</span>`).join('')}</div>
       <input type="hidden" name="meal_type" value="${n.dataset.addmeal}"><input type="hidden" name="date" value="${S.date}">
       ${field('음식명', 'food', 'text', '', 'required')}${field('칼로리(kcal)', 'calories', 'number', '', 'required')}
