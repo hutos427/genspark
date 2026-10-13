@@ -23,8 +23,123 @@
 | GET `/api/ai-guide?goal=diet|muscle|health&level=beginner|intermediate|advanced` | AI 운동 가이드 |
 
 ## 데이터 구조 (Cloudflare D1)
-users, sessions, schedules, sleep_logs, workouts, meals, inbody, goals — `migrations/0001_init.sql`
-비밀번호는 PBKDF2-SHA256(10만회)+salt 해시, 세션은 HttpOnly 쿠키(30일).
+- **DB**: Cloudflare D1 (SQLite 기반), 테이블 8개
+- **스크립트**: `migrations/0001_init.sql`(기본 테이블), `migrations/0002_meal_photo.sql`(AI 사진용 컬럼 추가)
+
+### 관계도 (ERD)
+```mermaid
+erDiagram
+    users ||--o{ sessions : "로그인"
+    users ||--o{ schedules : "일정"
+    users ||--o{ sleep_logs : "수면"
+    users ||--o{ workouts : "운동"
+    users ||--o{ meals : "식단"
+    users ||--o{ inbody : "인바디"
+    users ||--o{ goals : "목표"
+
+    users {
+        INTEGER id PK
+        TEXT username UK "아이디"
+        TEXT password_hash "암호화된 비밀번호"
+        TEXT salt
+        TEXT name "이름"
+        TEXT email "이메일"
+        TEXT phone "휴대폰"
+        TEXT birth "생년월일"
+        TEXT gender "M/F"
+        REAL height "키(cm)"
+        DATETIME created_at "가입일"
+    }
+    sessions {
+        TEXT token PK "로그인 토큰"
+        INTEGER user_id FK
+        INTEGER expires_at "만료(30일)"
+    }
+    schedules {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT date "날짜"
+        TEXT time "시간"
+        TEXT title "제목"
+        TEXT memo "메모"
+        INTEGER done "완료 0/1"
+    }
+    sleep_logs {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT date "기상일"
+        TEXT bed_time "취침"
+        TEXT wake_time "기상"
+        INTEGER duration_min "수면(분)"
+        INTEGER quality "만족도 1~5"
+        TEXT states "상태 태그"
+        TEXT memo
+    }
+    workouts {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT date
+        TEXT type "운동 종류"
+        INTEGER duration_min "운동(분)"
+        INTEGER calories "소모 kcal"
+        TEXT intensity "강도"
+        TEXT memo
+    }
+    meals {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT date
+        TEXT meal_type "아침/점심/저녁/간식"
+        TEXT food "음식명"
+        INTEGER calories "kcal"
+        REAL carbs "탄수(g)"
+        REAL protein "단백질(g)"
+        REAL fat "지방(g)"
+        TEXT photo "사진(AI)"
+        INTEGER ai "AI 분석 여부"
+    }
+    inbody {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT date "측정일"
+        REAL weight "체중"
+        REAL muscle "골격근량"
+        REAL fat_mass "체지방량"
+        REAL fat_pct "체지방률"
+        REAL bmi
+        INTEGER bmr "기초대사량"
+    }
+    goals {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT kind "long/monthly"
+        TEXT month "월별 목표의 달"
+        TEXT deadline "장기 목표 기한"
+        TEXT title "목표명"
+        REAL target "목표값"
+        REAL current "현재값"
+        TEXT unit "단위"
+        INTEGER done "달성 여부"
+    }
+```
+
+### 테이블과 사용 화면
+| 테이블 | 용도 | 사용 화면 |
+|---|---|---|
+| `users` | 회원 정보 | 로그인, 회원가입, 아이디/비밀번호 찾기, 내정보 |
+| `sessions` | 로그인 상태 유지 | 전체 |
+| `schedules` | 일정 | 홈 (달력, 일정) |
+| `sleep_logs` | 수면 시간과 상태 | 수면 탭, 홈 |
+| `workouts` | 운동 기록 | 홈 (운동 기록, 통계), AI 운동가이드 |
+| `meals` | 식단, AI 사진 분석 결과 | 헬스 > 식단, 홈 |
+| `inbody` | 신체 정보 | 내정보 > 인바디, 홈 통계(신체정보) |
+| `goals` | 장기 / 월별 목표 | 헬스 > 장기·월별 목표 |
+
+### 설계 내용
+- 회원 1명 : 기록 여러 개 구조. 모든 기록은 `user_id`로 회원과 연결되며, 서버에서 본인 데이터만 접근하도록 제한합니다.
+- 비밀번호는 PBKDF2-SHA256(10만 회) + salt 해시로만 저장하고, 세션은 HttpOnly 쿠키(30일)입니다.
+- 각 기록 테이블에 `(user_id, date)` 인덱스, `goals`에 `(user_id, kind)` 인덱스가 있습니다.
+- `goals`는 `kind` 값으로 장기 목표와 월별 목표를 함께 관리합니다.
 
 ## 환경 변수 (시크릿)
 - `OPENAI_API_KEY`, `OPENAI_BASE_URL` — 로컬은 `.dev.vars`(git 제외), 프로덕션은 `wrangler pages secret put`
