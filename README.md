@@ -141,6 +141,10 @@ erDiagram
 - 각 기록 테이블에 `(user_id, date)` 인덱스, `goals`에 `(user_id, kind)` 인덱스가 있습니다.
 - `goals`는 `kind` 값으로 장기 목표와 월별 목표를 함께 관리합니다.
 
+## 분석 산출물
+- `docs/FitLife_분석산출물.xlsx` — 요구사항정의서, 기능정의서, 유스케이스 명세, 화면목록, 테이블목록/정의서, 인덱스정의서, API정의서, 업무규칙, 메시지정의서, 요구사항추적표 (11종)
+- `docs/generate_analysis_docs.py` — 산출물 생성 스크립트
+
 ## 환경 변수 (시크릿)
 - `OPENAI_API_KEY`, `OPENAI_BASE_URL` — 로컬은 `.dev.vars`(git 제외), 프로덕션은 `wrangler pages secret put`
 

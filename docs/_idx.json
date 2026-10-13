@@ -1,0 +1,40 @@
+[
+  {
+    "results": [
+      {
+        "name": "idx_sched",
+        "tbl_name": "schedules",
+        "sql": "CREATE INDEX idx_sched ON schedules(user_id, date)"
+      },
+      {
+        "name": "idx_sleep",
+        "tbl_name": "sleep_logs",
+        "sql": "CREATE INDEX idx_sleep ON sleep_logs(user_id, date)"
+      },
+      {
+        "name": "idx_work",
+        "tbl_name": "workouts",
+        "sql": "CREATE INDEX idx_work ON workouts(user_id, date)"
+      },
+      {
+        "name": "idx_meal",
+        "tbl_name": "meals",
+        "sql": "CREATE INDEX idx_meal ON meals(user_id, date)"
+      },
+      {
+        "name": "idx_inbody",
+        "tbl_name": "inbody",
+        "sql": "CREATE INDEX idx_inbody ON inbody(user_id, date)"
+      },
+      {
+        "name": "idx_goals",
+        "tbl_name": "goals",
+        "sql": "CREATE INDEX idx_goals ON goals(user_id, kind)"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "duration": 0
+    }
+  }
+]
