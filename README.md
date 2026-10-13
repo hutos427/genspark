@@ -42,3 +42,14 @@ npm run build && npm run db:migrate:local && pm2 start ecosystem.config.cjs
 - **Tech**: Hono + Cloudflare Pages/D1 + Tailwind(CDN) + Chart.js
 - **상태**: 샌드박스 개발 서버 동작 중 / 프로덕션 미배포
 - **Last Updated**: 2026-10-06
+
+---
+## About this repository (original content)
+```mermaid
+graph LR
+    A[Natural Language Input] --> B[Genspark Super Agent]
+    B --> C[LLM Processing]
+    C --> D[Code Generation/Analysis]
+    D --> E[GitHub Integration]
+    E --> F[Repository Updates]
+```
