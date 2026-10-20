@@ -57,7 +57,7 @@ function renderAuth() {
   let body = ''
   if (v === 'login') {
     body = `<form id="login-form" class="card">
-      ${field('아이디', 'username', 'text', '', 'required autocomplete="username"')}
+      ${field('아이디', 'username', 'text', '', 'required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"')}
       ${field('비밀번호', 'password', 'password', '', 'required autocomplete="current-password"')}
       <button class="btn btn-primary mt-5">로그인</button>
       <div class="flex justify-center gap-4 mt-4 text-sm text-slate-500">
@@ -66,7 +66,7 @@ function renderAuth() {
   } else if (v === 'signup') {
     body = `<form id="signup-form" class="card">
       <h2 class="font-bold text-lg mb-1">회원가입</h2>
-      ${field('아이디 (영문/숫자 4~20자) *', 'username', 'text', '', 'required')}
+      ${field('아이디 (영문/숫자 4~20자) *', 'username', 'text', '', 'required autocapitalize="none" autocorrect="off" spellcheck="false"')}
       ${field('비밀번호 (6자 이상) *', 'password', 'password', '', 'required minlength="6"')}
       ${field('비밀번호 확인 *', 'password2', 'password', '', 'required')}
       ${field('이름 *', 'name', 'text', '', 'required')}
@@ -84,7 +84,7 @@ function renderAuth() {
       <button class="${t === 'pw' ? 'active' : ''}" data-find="pw">비밀번호 찾기</button></div>
       ${t === 'id'
         ? `<form id="findid-form">${field('이름', 'name', 'text', '', 'required')}${field('가입 이메일', 'email', 'email', '', 'required')}<button class="btn btn-primary mt-5">아이디 찾기</button></form>`
-        : `<form id="findpw-form">${field('아이디', 'username', 'text', '', 'required')}${field('가입 이메일', 'email', 'email', '', 'required')}<button class="btn btn-primary mt-5">임시 비밀번호 발급</button></form>`}
+        : `<form id="findpw-form">${field('아이디', 'username', 'text', '', 'required autocapitalize="none" autocorrect="off"')}${field('가입 이메일', 'email', 'email', '', 'required')}<button class="btn btn-primary mt-5">임시 비밀번호 발급</button></form>`}
       <div id="find-result" class="mt-4"></div>
       <button type="button" class="w-full text-sm text-slate-500 mt-3" data-go="login">← 로그인으로</button></div>`
   }

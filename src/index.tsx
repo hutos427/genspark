@@ -19,11 +19,13 @@ const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10)
 // ---------- auth ----------
 app.post('/api/auth/signup', async (c) => {
   const b = await c.req.json()
-  const { username, password, name, email } = b
+  const username = String(b.username || '').trim().toLowerCase()
+  const name = String(b.name || '').trim(), email = String(b.email || '').trim()
+  const { password } = b
   if (!username || !password || !name || !email) return c.json({ error: '필수 항목을 입력해주세요.' }, 400)
   if (!/^[a-zA-Z0-9_]{4,20}$/.test(username)) return c.json({ error: '아이디는 영문/숫자 4~20자입니다.' }, 400)
   if (password.length < 6) return c.json({ error: '비밀번호는 6자 이상이어야 합니다.' }, 400)
-  const ex = await c.env.DB.prepare('SELECT id FROM users WHERE username=?').bind(username).first()
+  const ex = await c.env.DB.prepare('SELECT id FROM users WHERE username=? COLLATE NOCASE').bind(username).first()
   if (ex) return c.json({ error: '이미 사용 중인 아이디입니다.' }, 409)
   const salt = randHex()
   const hash = await hashPw(password, salt)
@@ -35,7 +37,8 @@ app.post('/api/auth/signup', async (c) => {
 
 app.post('/api/auth/login', async (c) => {
   const { username, password } = await c.req.json()
-  const u = await c.env.DB.prepare('SELECT * FROM users WHERE username=?').bind(username || '').first<any>()
+  const u = await c.env.DB.prepare('SELECT * FROM users WHERE username=? COLLATE NOCASE')
+    .bind(String(username || '').trim()).first<any>()
   if (!u || (await hashPw(password || '', u.salt)) !== u.password_hash)
     return c.json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.' }, 401)
   const token = randHex(32)
@@ -54,7 +57,8 @@ app.post('/api/auth/logout', async (c) => {
 
 app.post('/api/auth/find-id', async (c) => {
   const { name, email } = await c.req.json()
-  const r = await c.env.DB.prepare('SELECT username FROM users WHERE name=? AND email=?').bind(name || '', email || '').all<any>()
+  const r = await c.env.DB.prepare('SELECT username FROM users WHERE name=? AND email=? COLLATE NOCASE')
+    .bind(String(name || '').trim(), String(email || '').trim()).all<any>()
   if (!r.results.length) return c.json({ error: '일치하는 회원 정보가 없습니다.' }, 404)
   const mask = (s: string) => s.slice(0, Math.max(2, s.length - 3)) + '*'.repeat(Math.min(3, s.length - 2))
   return c.json({ usernames: r.results.map((x) => mask(x.username)) })
@@ -62,7 +66,8 @@ app.post('/api/auth/find-id', async (c) => {
 
 app.post('/api/auth/reset-password', async (c) => {
   const { username, email } = await c.req.json()
-  const u = await c.env.DB.prepare('SELECT id FROM users WHERE username=? AND email=?').bind(username || '', email || '').first<any>()
+  const u = await c.env.DB.prepare('SELECT id FROM users WHERE username=? COLLATE NOCASE AND email=? COLLATE NOCASE')
+    .bind(String(username || '').trim(), String(email || '').trim()).first<any>()
   if (!u) return c.json({ error: '일치하는 회원 정보가 없습니다.' }, 404)
   const temp = randHex(4)
   const salt = randHex()
