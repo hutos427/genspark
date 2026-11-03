@@ -1,4 +1,4 @@
-// ================= FitLife SPA =================
+// ================= GoldenCare SPA =================
 const $app = document.getElementById('app')
 const S = {
   user: null, tab: 'home', authView: 'login', findTab: 'id',
@@ -52,7 +52,7 @@ function renderAuth() {
   const v = S.authView
   const header = `<div class="text-center pt-14 pb-8">
     <div class="w-20 h-20 mx-auto rounded-3xl header-grad flex items-center justify-center text-4xl shadow-lg"><i class="fas fa-heart-pulse"></i></div>
-    <h1 class="text-3xl font-extrabold mt-4 text-slate-800">FitLife</h1>
+    <h1 class="text-3xl font-extrabold mt-4 text-slate-800">GoldenCare</h1>
     <p class="text-slate-500 mt-1 text-sm">운동 · 식단 · 수면을 한 곳에서</p></div>`
   let body = ''
   if (v === 'login') {
