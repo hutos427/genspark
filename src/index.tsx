@@ -44,14 +44,19 @@ app.post('/api/auth/login', async (c) => {
   const token = randHex(32)
   await c.env.DB.prepare('INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)')
     .bind(token, u.id, Date.now() + 30 * 86400e3).run()
-  setCookie(c, 'sid', token, { httpOnly: true, path: '/', sameSite: 'Lax', maxAge: 30 * 86400, secure: true })
-  return c.json({ ok: true })
+  setCookie(c, 'sid', token, { httpOnly: true, path: '/', sameSite: 'None', maxAge: 30 * 86400, secure: true, partitioned: true })
+  return c.json({ ok: true, token })
 })
 
+const getToken = (c: any) => {
+  const h = c.req.header('Authorization') || ''
+  return h.startsWith('Bearer ') ? h.slice(7) : getCookie(c, 'sid')
+}
+
 app.post('/api/auth/logout', async (c) => {
-  const t = getCookie(c, 'sid')
+  const t = getToken(c)
   if (t) await c.env.DB.prepare('DELETE FROM sessions WHERE token=?').bind(t).run()
-  deleteCookie(c, 'sid', { path: '/' })
+  deleteCookie(c, 'sid', { path: '/', secure: true, sameSite: 'None', partitioned: true })
   return c.json({ ok: true })
 })
 
@@ -79,7 +84,7 @@ app.post('/api/auth/reset-password', async (c) => {
 // ---------- auth middleware ----------
 app.use('/api/*', async (c, next) => {
   if (c.req.path.startsWith('/api/auth/')) return next()
-  const t = getCookie(c, 'sid')
+  const t = getToken(c)
   if (!t) return c.json({ error: 'unauthorized' }, 401)
   const s = await c.env.DB.prepare('SELECT user_id, expires_at FROM sessions WHERE token=?').bind(t).first<any>()
   if (!s || s.expires_at < Date.now()) return c.json({ error: 'unauthorized' }, 401)

@@ -14,14 +14,16 @@ const fmtMin = (m) => { m = Math.round(m || 0); return `${Math.floor(m / 60)}시
 const KDAY = ['일', '월', '화', '수', '목', '금', '토']
 const fmtDate = (d) => { const x = new Date(d + 'T00:00:00'); return `${x.getMonth() + 1}월 ${x.getDate()}일 (${KDAY[x.getDay()]})` }
 
+function getTok() { try { return localStorage.getItem('gc_token') } catch { return null } }
+function setTok(t) { try { t ? localStorage.setItem('gc_token', t) : localStorage.removeItem('gc_token') } catch {} }
 async function api(path, opt = {}) {
   const res = await fetch('/api' + path, {
     method: opt.method || 'GET', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: Object.assign({ 'Content-Type': 'application/json' }, getTok() ? { Authorization: 'Bearer ' + getTok() } : {}),
     body: opt.body ? JSON.stringify(opt.body) : undefined,
   })
   const data = await res.json().catch(() => ({}))
-  if (res.status === 401 && !path.startsWith('/auth/')) { S.user = null; render(); throw new Error('로그인이 필요합니다') }
+  if (res.status === 401 && !path.startsWith('/auth/')) { setTok(null); S.user = null; render(); throw new Error('로그인이 필요합니다') }
   if (!res.ok) throw new Error(data.error || '요청 실패')
   return data
 }
@@ -92,7 +94,7 @@ function renderAuth() {
   $app.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => { S.authView = b.dataset.go; render() }))
   $app.querySelectorAll('[data-find]').forEach((b) => (b.onclick = () => { S.findTab = b.dataset.find; render() }))
   const on = (id, fn) => { const f = document.getElementById(id); if (f) f.onsubmit = async (e) => { e.preventDefault(); try { await fn(formData(f)) } catch (err) { toast(err.message) } } }
-  on('login-form', async (d) => { await api('/auth/login', { method: 'POST', body: d }); await boot() })
+  on('login-form', async (d) => { const r = await api('/auth/login', { method: 'POST', body: d }); setTok(r.token); await boot() })
   on('signup-form', async (d) => {
     if (d.password !== d.password2) throw new Error('비밀번호가 일치하지 않습니다')
     await api('/auth/signup', { method: 'POST', body: d }); toast('가입 완료! 로그인해주세요'); S.authView = 'login'; render()
@@ -525,7 +527,7 @@ async function renderMy(el) {
     <div id="my-body"></div>
     <button class="btn w-full bg-white text-red-500 shadow-sm mt-2" id="logout-btn"><i class="fas fa-right-from-bracket"></i> 로그아웃</button></div>`
   bind(el, '[data-mt]', 'click', (n) => { S.myTab = n.dataset.mt; render() })
-  el.querySelector('#logout-btn').onclick = async () => { await api('/auth/logout', { method: 'POST' }); S.user = null; S.authView = 'login'; render() }
+  el.querySelector('#logout-btn').onclick = async () => { await api('/auth/logout', { method: 'POST' }); setTok(null); S.user = null; S.authView = 'login'; render() }
   const body = el.querySelector('#my-body')
   const submit = (id, fn) => (body.querySelector(id).onsubmit = async (e) => { e.preventDefault(); try { await fn(formData(e.target)); toast('저장되었습니다'); render() } catch (err) { toast(err.message) } })
   if (t === 'profile') {
