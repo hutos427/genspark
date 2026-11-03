@@ -49,3 +49,10 @@ body { font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD G
 .ai-spinner { width: 42px; height: 42px; margin: 0 auto; border: 4px solid #e0e7ff; border-top-color: #6366f1; border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .btn:disabled { opacity: .5; }
+
+.install-fab { position: fixed; right: max(16px, calc(50% - 224px)); bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 45; background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff; font-weight: 700; font-size: 13px; padding: 10px 14px; border-radius: 999px; box-shadow: 0 6px 18px rgba(99,102,241,.4); }
+@media (display-mode: standalone) {
+  .header-grad { padding-top: calc(2rem + env(safe-area-inset-top)); }
+  .toast { top: calc(20px + env(safe-area-inset-top)); }
+  body { overscroll-behavior-y: none; }
+}

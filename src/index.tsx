@@ -303,12 +303,65 @@ app.get('/api/ai-guide', async (c) => {
     nutrition: { bmr, tdee, kcal, protein, carbs: Math.round((kcal * 0.45) / 4), fat: Math.round((kcal * 0.25) / 9) } })
 })
 
+// ---------- PWA (앱 설치) ----------
+app.get('/manifest.webmanifest', (c) =>
+  c.body(JSON.stringify({
+    name: 'GoldenCare - 골든 케어',
+    short_name: '골든케어',
+    description: 'AI 기반 맞춤형 건강관리 앱 (일정·운동·식단·수면·인바디)',
+    id: '/',
+    start_url: '/?source=pwa',
+    scope: '/',
+    display: 'standalone',
+    orientation: 'portrait',
+    background_color: '#f8fafc',
+    theme_color: '#6366f1',
+    lang: 'ko',
+    icons: [
+      { src: '/static/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/static/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/static/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  }), 200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' })
+)
+
+const SW_VERSION = 'gc-v1'
+app.get('/sw.js', (c) =>
+  c.body(`const CACHE='${SW_VERSION}';
+const SHELL=['/','/static/app.js','/static/style.css','/static/icons/icon-192.png','/static/icons/icon-512.png'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
+self.addEventListener('fetch',e=>{
+  const r=e.request; if(r.method!=='GET') return;
+  const u=new URL(r.url);
+  if(u.origin===location.origin && u.pathname.startsWith('/api/')) return; // API는 항상 네트워크
+  if(r.mode==='navigate'){ // 화면: 네트워크 우선, 오프라인이면 캐시
+    e.respondWith(fetch(r).then(res=>{const cp=res.clone();caches.open(CACHE).then(c=>c.put('/',cp));return res}).catch(()=>caches.match('/')));
+    return;
+  }
+  if(u.origin===location.origin){ // 내 정적 파일: 네트워크 우선
+    e.respondWith(fetch(r).then(res=>{if(res.ok){const cp=res.clone();caches.open(CACHE).then(c=>c.put(r,cp))}return res}).catch(()=>caches.match(r)));
+    return;
+  }
+  // CDN(Tailwind, 아이콘, Chart.js): 캐시 우선
+  e.respondWith(caches.match(r).then(hit=>hit||fetch(r).then(res=>{const cp=res.clone();caches.open(CACHE).then(c=>c.put(r,cp));return res})));
+});`, 200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/' })
+)
+
 // ---------- SPA shell ----------
 app.get('*', (c) =>
   c.html(`<!DOCTYPE html>
 <html lang="ko"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
 <title>GoldenCare - 골든 케어</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#6366f1">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="골든케어">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon-180.png">
+<link rel="icon" type="image/png" href="/static/icons/favicon.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
 <link href="/static/style.css" rel="stylesheet">

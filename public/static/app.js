@@ -570,3 +570,27 @@ async function boot() {
   render()
 }
 boot()
+
+// ================= PWA (앱 설치) =================
+let deferredPrompt = null
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {}))
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; showInstallBtn() })
+window.addEventListener('appinstalled', () => { deferredPrompt = null; document.getElementById('install-btn')?.remove(); toast('골든케어 앱이 설치되었어요!') })
+function showInstallBtn() {
+  if (isStandalone() || document.getElementById('install-btn')) return
+  const b = document.createElement('button')
+  b.id = 'install-btn'; b.className = 'install-fab'
+  b.innerHTML = '<i class="fas fa-download"></i> 앱 설치'
+  b.onclick = async () => {
+    if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; b.remove() }
+    else if (isIOS()) alert('아이폰: Safari 하단 공유 버튼(□↑) → "홈 화면에 추가"를 누르세요.')
+    else alert('브라우저 메뉴(⋮) → "앱 설치" 또는 "홈 화면에 추가"를 누르세요.')
+  }
+  document.body.appendChild(b)
+}
+// iOS는 설치 이벤트가 없으므로 안내 버튼을 직접 표시
+if (isIOS() && !isStandalone()) setTimeout(showInstallBtn, 1500)
