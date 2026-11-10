@@ -1,5 +1,10 @@
 # GoldenCare(골든 케어) – AI 기반 맞춤형 건강관리 웹앱
 
+## URL
+- **배포 주소 (Cloudflare Pages)**: https://goldencare-ar7.pages.dev
+- **데모 계정**: `demo` / `demo1234`
+- **GitHub**: https://github.com/hutos427/genspark
+
 ## 개요
 모바일 우선 SPA. 로그인 후 하단 탭 4개(홈 / 헬스 / 수면 / 내정보)로 건강 데이터를 기록하고 분석합니다.
 
@@ -163,14 +168,16 @@ erDiagram
 - 목표 진행률을 운동·체중 기록과 자동 연결
 - 이메일 인증 기반 비밀번호 재설정(현재는 화면에 임시 비밀번호 표시)
 - 웨어러블/건강앱 연동, 푸시 알림, 음식 DB 검색
-- 프로덕션 배포(Cloudflare D1 생성 후 `database_id` 교체)
 
 ## 로컬 실행
 ```
 npm run build && npm run db:migrate:local && pm2 start ecosystem.config.cjs
 ```
 - **Tech**: Hono + Cloudflare Pages/D1 + Tailwind(CDN) + Chart.js
-- **상태**: 샌드박스 개발 서버 동작 중 / 프로덕션 미배포
+- **상태**: ✅ Cloudflare Pages 배포 완료 (프로젝트 `goldencare`, D1 `goldencare-production` / APAC)
+- **재배포**: `npm run build && npx wrangler pages deploy dist --project-name goldencare --branch main`
+- **DB 변경 시**: `npx wrangler d1 migrations apply goldencare-production --remote`
+- **시크릿**: `OPENAI_API_KEY`, `OPENAI_BASE_URL` (`wrangler pages secret put ... --project-name goldencare`)
 - **Last Updated**: 2026-11-10
 
 ---

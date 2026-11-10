@@ -7,9 +7,9 @@
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
-    "db:migrate:local": "wrangler d1 migrations apply webapp-production --local",
-    "db:migrate:prod": "wrangler d1 migrations apply webapp-production",
-    "dev:sandbox": "wrangler pages dev dist --d1=webapp-production --local --ip 0.0.0.0 --port 3000"
+    "db:migrate:local": "wrangler d1 migrations apply goldencare-production --local",
+    "db:migrate:prod": "wrangler d1 migrations apply goldencare-production",
+    "dev:sandbox": "wrangler pages dev dist --d1=goldencare-production --local --ip 0.0.0.0 --port 3000"
   },
   "dependencies": {
     "hono": "^4.13.8"

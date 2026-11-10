@@ -1,10 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "webapp",
+  "name": "goldencare",
   "compatibility_date": "2026-09-17",
   "pages_build_output_dir": "./dist",
   "compatibility_flags": ["nodejs_compat"],
   "d1_databases": [
-    { "binding": "DB", "database_name": "webapp-production", "database_id": "local-dev-placeholder" }
+    { "binding": "DB", "database_name": "goldencare-production", "database_id": "a7110f69-1c12-47e0-b2b6-3d188dd26d58", "preview_database_id": "local-dev-placeholder", "migrations_dir": "migrations" }
   ]
 }
