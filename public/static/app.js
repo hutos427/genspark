@@ -377,7 +377,7 @@ function renderPlanForm(body, latest) {
     S.planInput = d; S.aiGoal = d.goal; S.aiLevel = d.level
     const btn = body.querySelector('#plan-go'); btn.disabled = true
     body.querySelector('#plan-loading').innerHTML = `<div class="text-center py-6 text-slate-500"><div class="ai-spinner"></div>
-      <p class="mt-3 text-sm">AI가 운동 일정과 식단을 짜고 있어요...</p><p class="text-xs text-slate-400">약 20~40초 걸려요</p></div>`
+      <p class="mt-3 text-sm">AI가 운동 일정과 식단을 짜고 있어요...</p><p class="text-xs text-slate-400">약 30초~1분 걸려요. 화면을 닫지 말고 기다려 주세요</p></div>`
     try {
       const r = await api('/ai-plans/generate', { method: 'POST', body: d })
       S.planForm = false
