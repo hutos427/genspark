@@ -3,7 +3,7 @@ const $app = document.getElementById('app')
 const S = {
   user: null, tab: 'home', authView: 'login', findTab: 'id',
   date: kstToday(), calMonth: kstToday().slice(0, 7),
-  statDays: 7, statMetric: 'kcal', healthTab: 'ai', aiGoal: 'health', aiLevel: 'beginner',
+  statDays: 7, statMetric: 'kcal', healthTab: 'plan', planForm: false, aiGoal: 'health', aiLevel: 'beginner',
   goalMonth: kstToday().slice(0, 7), myTab: 'profile',
 }
 let charts = []
@@ -166,8 +166,8 @@ async function renderHome(el) {
     <section class="card" id="schedule-card"><div class="card-title"><span><i class="fas fa-calendar-check text-amber-500 mr-1"></i> 일정</span>
       <button class="btn btn-ghost btn-sm" id="add-schedule"><i class="fas fa-plus"></i> 추가</button></div>
       ${sum.schedules.length ? sum.schedules.map((s) => `<div class="list-item">
-        <input type="checkbox" class="w-5 h-5 accent-indigo-500" data-sdone="${s.id}" ${s.done ? 'checked' : ''}>
-        <div class="flex-1 ${s.done ? 'line-through text-slate-400' : ''}"><b class="text-sm">${esc(s.title)}</b>
+        <input type="checkbox" class="w-5 h-5 accent-indigo-500" data-sdone="${s.id}" data-plan="${s.plan_id || ''}" ${s.done ? 'checked' : ''}>
+        <div class="flex-1 ${s.done ? 'line-through text-slate-400' : ''}"><b class="text-sm">${s.plan_id ? '<span class="ai-badge mr-1">AI</span>' : ''}${esc(s.plan_id ? s.title.replace(/^AI 운동: /, '') : s.title)}</b>
         <p class="text-xs text-slate-400">${esc(s.time || '종일')} ${s.memo ? '· ' + esc(s.memo) : ''}</p></div>
         <button class="text-slate-300" data-del="schedules/${s.id}"><i class="fas fa-trash"></i></button></div>`).join('') : '<p class="empty">등록된 일정이 없습니다</p>'}</section>
 
@@ -204,7 +204,13 @@ async function renderHome(el) {
   bind(el, '[data-goto]', 'click', (n) => { S.tab = n.dataset.goto; if (n.dataset.htab) S.healthTab = n.dataset.htab; render() })
   bind(el, '[data-photo]', 'change', (n) => { const f = n.files[0]; n.value = ''; if (f) aiPhotoFlow(f) })
   bind(el, '[data-del]', 'click', async (n) => { if (!confirm('삭제할까요?')) return; await api('/' + n.dataset.del, { method: 'DELETE' }); render() })
-  bind(el, '[data-sdone]', 'change', async (n) => { await api(`/schedules/${n.dataset.sdone}`, { method: 'PUT', body: { done: n.checked ? 1 : 0 } }); render() })
+  bind(el, '[data-sdone]', 'change', async (n) => {
+    try {
+      if (n.checked && n.dataset.plan) { await api(`/ai-plans/complete/${n.dataset.sdone}`, { method: 'POST' }); toast('완료! 운동 기록에도 추가했어요 💪') }
+      else await api(`/schedules/${n.dataset.sdone}`, { method: 'PUT', body: { done: n.checked ? 1 : 0 } })
+    } catch (e) { toast(e.message) }
+    render()
+  })
   el.querySelector('#add-schedule').onclick = () => modal('일정 추가', field('날짜', 'date', 'date', S.date, 'required') + field('제목', 'title', 'text', '', 'required') +
     field('시간', 'time', 'time') + field('메모', 'memo'), (d) => api('/schedules', { method: 'POST', body: d }))
   el.querySelector('#add-workout').onclick = () => workoutModal()
@@ -263,13 +269,122 @@ function drawStats(st) {
 async function renderHealth(el) {
   const t = S.healthTab
   el.innerHTML = `${pageHeader('헬스', 'AI 맞춤 운동 · 식단 · 목표')}<div class="page">
-    <div class="seg mb-3 bg-white shadow-sm">${[['ai', 'AI운동가이드'], ['diet', '식단'], ['long', '장기목표'], ['monthly', '월별목표']].map(([k, l]) =>
+    <div class="seg mb-3 bg-white shadow-sm">${[['plan', 'AI 1주계획'], ['ai', '운동가이드'], ['diet', '식단'], ['long', '장기목표'], ['monthly', '월별목표']].map(([k, l]) =>
       `<button data-ht="${k}" class="${t === k ? 'active' : ''}">${l}</button>`).join('')}</div><div id="health-body"></div></div>`
   bind(el, '[data-ht]', 'click', (n) => { S.healthTab = n.dataset.ht; render() })
   const body = el.querySelector('#health-body')
+  if (t === 'plan') return renderPlan(body)
   if (t === 'ai') return renderAI(body)
   if (t === 'diet') return renderDiet(body)
   return renderGoals(body, t)
+}
+
+// ================= AI 맞춤 1주 계획 =================
+const GOALS = [['diet', '🔥 체중감량'], ['muscle', '💪 근력증가'], ['health', '🌿 건강유지']]
+const LEVELS = [['beginner', '초급'], ['intermediate', '중급'], ['advanced', '고급']]
+const PLACES = [['home', '🏠 집'], ['gym', '🏋️ 헬스장'], ['outdoor', '🌳 야외']]
+async function renderPlan(body) {
+  const latest = await api('/ai-plans/latest')
+  if (!latest || S.planForm) return renderPlanForm(body, latest)
+  const { plan: p, applied, id } = latest
+  const today = kstToday()
+  const isRule = p.source === 'rule'
+  body.innerHTML = `<section class="card ${isRule ? '' : 'ai-photo-card'}">
+      <div class="card-title"><span><i class="fas fa-wand-magic-sparkles text-violet-500 mr-1"></i> 이번 주 맞춤 계획</span>
+        <span class="ai-badge ${isRule ? '!bg-amber-100 !text-amber-700' : ''}">${isRule ? '기본 계획' : 'AI 생성'}</span></div>
+      <p class="text-xs text-slate-400 -mt-1 mb-2">${fmtDate(latest.start_date)} ~ ${fmtDate(p.days[6].date)}</p>
+      ${isRule ? `<p class="text-xs bg-amber-50 text-amber-700 rounded-lg p-2 mb-2"><i class="fas fa-triangle-exclamation"></i> AI 연결이 안 되어 기본 규칙으로 만든 계획이에요. AI가 연결되면 "새 계획 만들기"로 다시 만들어 보세요.</p>`
+        : p.summary ? `<p class="text-sm text-slate-600 mb-2">${esc(p.summary)}</p>` : ''}
+      <div class="grid grid-cols-4 gap-2 text-center text-sm">
+        <div class="stat-box bg-indigo-50"><p class="text-[11px] text-indigo-500">하루 목표</p><b class="text-indigo-600">${p.daily_kcal}</b><p class="text-[10px] text-slate-400">kcal</p></div>
+        <div class="stat-box"><p class="text-[11px] text-slate-500">탄수화물</p><b>${p.macros.carbs}</b><p class="text-[10px] text-slate-400">g</p></div>
+        <div class="stat-box"><p class="text-[11px] text-slate-500">단백질</p><b>${p.macros.protein}</b><p class="text-[10px] text-slate-400">g</p></div>
+        <div class="stat-box"><p class="text-[11px] text-slate-500">지방</p><b>${p.macros.fat}</b><p class="text-[10px] text-slate-400">g</p></div></div>
+      <div class="grid grid-cols-2 gap-2 mt-3">
+        ${applied ? `<button class="btn btn-ghost" id="plan-unapply"><i class="fas fa-calendar-xmark"></i> 캘린더 등록 취소</button>`
+          : `<button class="btn btn-primary" id="plan-apply"><i class="fas fa-calendar-plus"></i> 캘린더에 등록</button>`}
+        <button class="btn btn-ghost" id="plan-new"><i class="fas fa-rotate"></i> 새 계획 만들기</button></div>
+      ${applied ? '<p class="text-[11px] text-emerald-600 text-center mt-2"><i class="fas fa-circle-check"></i> 운동일이 홈 캘린더 일정에 등록되어 있어요. 일정을 체크하면 운동 기록에도 자동 추가돼요.</p>' : ''}
+    </section>
+    <section class="card"><div class="card-title"><span><i class="fas fa-calendar-week text-emerald-500 mr-1"></i> 7일 일정</span></div>
+      ${p.days.map((d) => `<details class="border-b border-slate-100 py-2" ${d.date === today ? 'open' : ''}>
+        <summary class="cursor-pointer flex items-center gap-2">
+          <span class="w-12 text-center text-[11px] rounded-lg py-1 ${d.date === today ? 'header-grad' : d.rest ? 'bg-slate-100 text-slate-400' : 'bg-emerald-50 text-emerald-600'} font-bold">${fmtDate(d.date).replace(/^\d+월 /, '')}</span>
+          <div class="flex-1"><b class="text-sm ${d.rest ? 'text-slate-400' : ''}">${esc(d.focus)}</b>
+            ${d.rest ? '' : `<p class="text-[11px] text-slate-400">${esc(d.time)} · ${d.duration_min}분 · 약 ${d.est_kcal}kcal · ${esc(d.intensity)}</p>`}</div>
+          ${d.date === today ? '<span class="text-[10px] bg-indigo-100 text-indigo-600 px-2 rounded-full">오늘</span>' : ''}</summary>
+        ${d.exercises.length ? `<ul class="ml-14 mt-2 text-sm text-slate-600 list-disc pl-4">${d.exercises.map((e) => `<li>${esc(e.name)} <span class="text-slate-400">${esc(e.detail)}</span></li>`).join('')}</ul>` : ''}
+        <div class="ml-14 mt-2 bg-slate-50 rounded-xl p-2">
+          <p class="text-[11px] text-slate-500 mb-1"><i class="fas fa-utensils text-red-400"></i> 추천 식단</p>
+          ${Object.entries(d.meals).map(([m, x]) => `<div class="flex items-center gap-2 text-xs py-1">
+            <span class="w-8 text-slate-400">${m}</span><span class="flex-1">${esc(x.menu)}</span><b class="text-slate-500">${x.kcal}</b>
+            <button class="text-indigo-500" title="식단에 기록" data-eat="${d.date}|${m}"><i class="fas fa-plus-circle"></i></button></div>`).join('')}
+        </div></details>`).join('')}
+    </section>
+    ${p.tips?.length ? `<section class="card"><div class="card-title"><span><i class="fas fa-lightbulb text-amber-500 mr-1"></i> 실천 팁</span></div>
+      ${p.tips.map((t) => `<p class="text-sm text-slate-600 py-1 flex gap-2"><i class="fas fa-check text-indigo-400 mt-1"></i><span>${esc(t)}</span></p>`).join('')}</section>` : ''}
+    <p class="text-[11px] text-slate-400 text-center mb-4">AI 추천은 참고용이며 의학적 조언이 아닙니다. 몸 상태에 맞게 조절하세요.</p>`
+
+  body.querySelector('#plan-new').onclick = () => { S.planForm = true; render() }
+  const ap = body.querySelector('#plan-apply')
+  if (ap) ap.onclick = async () => {
+    ap.disabled = true
+    try { const r = await api(`/ai-plans/${id}/apply`, { method: 'POST' }); toast(`운동 ${r.count}일을 캘린더에 등록했어요`); render() } catch (e) { toast(e.message); ap.disabled = false }
+  }
+  const un = body.querySelector('#plan-unapply')
+  if (un) un.onclick = async () => {
+    if (!confirm('캘린더에서 이 계획의 (완료하지 않은) 운동 일정을 지울까요?')) return
+    await api(`/ai-plans/${id}/apply`, { method: 'DELETE' }); toast('등록을 취소했어요'); render()
+  }
+  bind(body, '[data-eat]', 'click', async (n, e) => {
+    e.preventDefault()
+    const [date, m] = n.dataset.eat.split('|'), x = p.days.find((d) => d.date === date).meals[m]
+    try { await api('/meals', { method: 'POST', body: { date, meal_type: m, food: x.menu, calories: x.kcal, ai: 1 } }); toast(`${m} ${x.kcal}kcal 기록 완료`) } catch (err) { toast(err.message) }
+  })
+}
+
+function renderPlanForm(body, latest) {
+  const v = Object.assign({ goal: S.aiGoal || 'health', level: S.aiLevel || 'beginner', days_per_week: 3, minutes: 40, place: 'home', time: '19:00', diet_pref: '', avoid: '', memo: '' },
+    latest?.input || {}, S.planInput || {}, { start_date: kstToday() })
+  S.planInput = v
+  const chips = (list, key) => list.map(([k, l]) => `<span class="chip ${String(v[key]) === String(k) ? 'on' : ''}" data-pk="${key}" data-pv="${k}">${l}</span>`).join('')
+  body.innerHTML = `<form class="card" id="plan-form">
+    <div class="card-title"><span><i class="fas fa-wand-magic-sparkles text-violet-500 mr-1"></i> AI에게 1주 계획 받기</span>
+      ${latest ? '<button type="button" class="text-slate-400 text-sm" id="plan-cancel">취소</button>' : ''}</div>
+    <p class="text-xs text-slate-500 -mt-1">내 신체정보(인바디)·최근 운동·수면·식단 기록과 아래 조건을 바탕으로 AI가 7일 운동 일정과 식단을 짜드려요.</p>
+    <label class="label">목표</label><div>${chips(GOALS, 'goal')}</div>
+    <label class="label">운동 수준</label><div>${chips(LEVELS, 'level')}</div>
+    <label class="label">운동 장소</label><div>${chips(PLACES, 'place')}</div>
+    <div class="grid grid-cols-3 gap-2">
+      <div><label class="label">주 운동일</label><select class="input" name="days_per_week">${[1, 2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}" ${v.days_per_week == n ? 'selected' : ''}>주 ${n}일</option>`).join('')}</select></div>
+      <div><label class="label">1회 시간</label><select class="input" name="minutes">${[20, 30, 40, 50, 60, 90].map((n) => `<option value="${n}" ${v.minutes == n ? 'selected' : ''}>${n}분</option>`).join('')}</select></div>
+      <div><label class="label">운동 시각</label><input class="input" type="time" name="time" value="${esc(v.time)}"></div></div>
+    ${field('시작일', 'start_date', 'date', v.start_date, 'required')}
+    ${field('식단 선호 (선택)', 'diet_pref', 'text', v.diet_pref, 'placeholder="예) 한식 위주, 자취라 간단하게"')}
+    ${field('피할 음식·알레르기 (선택)', 'avoid', 'text', v.avoid, 'placeholder="예) 땅콩, 우유"')}
+    ${field('추가 요청 (선택)', 'memo', 'text', v.memo, 'placeholder="예) 무릎이 약해요, 주말엔 등산"')}
+    <button class="btn btn-primary mt-5" id="plan-go"><i class="fas fa-wand-magic-sparkles"></i> AI로 1주 계획 만들기</button>
+    <div id="plan-loading"></div></form>`
+  const form = body.querySelector('#plan-form')
+  bind(body, '[data-pk]', 'click', (n) => { S.planInput[n.dataset.pk] = n.dataset.pv
+    body.querySelectorAll(`[data-pk="${n.dataset.pk}"]`).forEach((c) => c.classList.toggle('on', c === n)) })
+  const cancel = body.querySelector('#plan-cancel')
+  if (cancel) cancel.onclick = () => { S.planForm = false; render() }
+  form.onsubmit = async (e) => {
+    e.preventDefault()
+    const d = { ...S.planInput, ...formData(form) }
+    d.days_per_week = Number(d.days_per_week); d.minutes = Number(d.minutes)
+    S.planInput = d; S.aiGoal = d.goal; S.aiLevel = d.level
+    const btn = body.querySelector('#plan-go'); btn.disabled = true
+    body.querySelector('#plan-loading').innerHTML = `<div class="text-center py-6 text-slate-500"><div class="ai-spinner"></div>
+      <p class="mt-3 text-sm">AI가 운동 일정과 식단을 짜고 있어요...</p><p class="text-xs text-slate-400">약 20~40초 걸려요</p></div>`
+    try {
+      const r = await api('/ai-plans/generate', { method: 'POST', body: d })
+      S.planForm = false
+      toast(r.plan.source === 'ai' ? 'AI 계획이 완성됐어요!' : 'AI 연결이 안 되어 기본 계획을 만들었어요')
+      render()
+    } catch (err) { toast(err.message); btn.disabled = false; body.querySelector('#plan-loading').innerHTML = '' }
+  }
 }
 
 async function renderAI(body) {

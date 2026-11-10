@@ -7,6 +7,11 @@
 - **초기화면**: 로그인(아이디/비밀번호), 회원가입, 아이디 찾기(이름+이메일, 마스킹 표시), 비밀번호 찾기(아이디+이메일 → 임시 비밀번호 발급)
 - **홈**: 월간 캘린더(일정/운동/수면/식단 기록 도트 표시, 날짜 선택), 선택일 일정(추가·완료·삭제), 수면시간, 운동기록(MET 기반 칼로리 자동계산), 식단 칼로리(끼니별), 구간별 통계 그래프(1주/1개월/3개월/1년 × 운동량·운동시간·신체정보)
 - **📸 AI 사진 칼로리 측정**: 음식 사진 촬영/업로드 → GPT 비전 모델(gpt-5-mini)이 음식별 양·칼로리·탄단지 추정 → 항목 선택/칼로리 수정 → 날짜·끼니 지정 후 식단에 기록 (썸네일 + AI 뱃지 저장). 헬스>식단 탭 및 홈 식단 카드에서 사용
+- **🤖 AI 맞춤 1주 계획 (헬스 > AI 1주계획)**: 목표·수준·장소·주 운동일·시간·식단 선호·피할 음식을 입력하면, 신체정보(인바디)와 최근 7일 운동·수면·식단 기록·진행 중인 목표를 함께 AI(gpt-5-mini)에 보내 7일 운동 일정 + 매일 식단(아침/점심/저녁/간식) + 하루 목표 칼로리·탄단지 + 실천 팁을 생성
+  - **캘린더에 등록**: 운동일이 홈 일정에 `AI` 배지로 등록 (다시 등록해도 중복 없음, 등록 취소 가능)
+  - **일정 체크 → 운동 기록 자동 추가** (두 번 눌러도 1번만 기록)
+  - 추천 식단 옆 ➕ 버튼으로 바로 식단에 기록
+  - AI 연결 실패 시 규칙 기반 **기본 계획**으로 대신 만들고 화면에 "기본 계획"으로 표시, 하루 10회 생성 제한
 - **헬스**: AI 운동가이드(인바디·최근 운동량·수면 분석 리포트 + 목표/레벨별 주간 루틴 + 권장 영양), 식단(끼니별 기록, 빠른 음식 선택, 탄단지 차트), 장기 목표(D-day, 진행률), 월별 목표(월 실적 자동 집계)
 - **수면**: 원터치 취침/기상 타이머, 수면시간 체크(자정 넘김 자동 계산), 수면상태 체크(만족도 별점, 상태 태그, 메모), 2주 그래프·평균
 - **내정보**: 개인정보 수정, 비밀번호 변경, 인바디 갱신(BMI/체지방률 자동 계산) 및 이력
@@ -20,11 +25,15 @@
 | POST `/api/meals/analyze` `{image: dataURL, hint?}` | AI 음식 사진 칼로리 분석 |
 | GET `/api/summary?date=YYYY-MM-DD` | 홈 일별 요약 + 월 캘린더 마크 |
 | GET `/api/stats?days=7` | 기간 통계 |
-| GET `/api/ai-guide?goal=diet|muscle|health&level=beginner|intermediate|advanced` | AI 운동 가이드 |
+| GET `/api/ai-guide?goal=diet|muscle|health&level=beginner|intermediate|advanced` | 운동 가이드(규칙 기반) |
+| POST `/api/ai-plans/generate` `{goal, level, days_per_week, minutes, place, time, start_date, diet_pref?, avoid?, memo?}` | AI 1주 운동·식단 계획 생성 |
+| GET `/api/ai-plans/latest` | 가장 최근 계획 |
+| POST / DELETE `/api/ai-plans/:id/apply` | 캘린더(일정) 등록 / 등록 취소 |
+| POST `/api/ai-plans/complete/:scheduleId` | AI 일정 완료 + 운동 기록 자동 추가 |
 
 ## 데이터 구조 (Cloudflare D1)
-- **DB**: Cloudflare D1 (SQLite 기반), 테이블 8개
-- **스크립트**: `migrations/0001_init.sql`(기본 테이블), `migrations/0002_meal_photo.sql`(AI 사진용 컬럼 추가)
+- **DB**: Cloudflare D1 (SQLite 기반), 테이블 9개
+- **스크립트**: `migrations/0001_init.sql`(기본 테이블), `migrations/0002_meal_photo.sql`(AI 사진용 컬럼 추가), `migrations/0003_ai_plans.sql`(AI 1주 계획 `ai_plans` 테이블 + `schedules.plan_id`)
 
 ### 관계도 (ERD)
 ```mermaid
@@ -134,6 +143,7 @@ erDiagram
 | `meals` | 식단, AI 사진 분석 결과 | 헬스 > 식단, 홈 |
 | `inbody` | 신체 정보 | 내정보 > 인바디, 홈 통계(신체정보) |
 | `goals` | 장기 / 월별 목표 | 헬스 > 장기·월별 목표 |
+| `ai_plans` | AI 1주 계획(입력 조건·계획 JSON·등록 여부) | 헬스 > AI 1주계획, 홈 일정(`schedules.plan_id`로 연결) |
 
 ### 설계 내용
 - 회원 1명 : 기록 여러 개 구조. 모든 기록은 `user_id`로 회원과 연결되며, 서버에서 본인 데이터만 접근하도록 제한합니다.
@@ -149,7 +159,8 @@ erDiagram
 - `OPENAI_API_KEY`, `OPENAI_BASE_URL` — 로컬은 `.dev.vars`(git 제외), 프로덕션은 `wrangler pages secret put`
 
 ## 미구현 / 다음 단계
-- AI 가이드는 현재 규칙 기반 개인화 → OpenAI 등 LLM API 연동 가능
+- 운동가이드 탭은 규칙 기반 (AI 계획은 AI 1주계획 탭에서 제공)
+- 목표 진행률을 운동·체중 기록과 자동 연결
 - 이메일 인증 기반 비밀번호 재설정(현재는 화면에 임시 비밀번호 표시)
 - 웨어러블/건강앱 연동, 푸시 알림, 음식 DB 검색
 - 프로덕션 배포(Cloudflare D1 생성 후 `database_id` 교체)
@@ -160,7 +171,7 @@ npm run build && npm run db:migrate:local && pm2 start ecosystem.config.cjs
 ```
 - **Tech**: Hono + Cloudflare Pages/D1 + Tailwind(CDN) + Chart.js
 - **상태**: 샌드박스 개발 서버 동작 중 / 프로덕션 미배포
-- **Last Updated**: 2026-10-06
+- **Last Updated**: 2026-11-10
 
 ---
 ## About this repository (original content)
