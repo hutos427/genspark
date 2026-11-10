@@ -164,7 +164,13 @@ const clip = (v: any, n: number) => String(v ?? '').slice(0, n)
 const int = (v: any, lo: number, hi: number, d = 0) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d }
 
 function normalizePlan(out: any, start: string) {
-  const days = (Array.isArray(out.days) ? out.days : []).slice(0, 7).map((d: any, i: number) => {
+  if (!Array.isArray(out?.days) && out && typeof out === 'object') {
+    const inner = Object.values(out).find((v: any) => v && typeof v === 'object' && Array.isArray(v.days))
+    if (inner) out = inner
+  }
+  const src = (Array.isArray(out.days) ? out.days : []).slice(0, 7)
+  if (src.length >= 5) while (src.length < 7) src.push({ rest: true, focus: '휴식 · 가벼운 스트레칭' })
+  const days = src.map((d: any, i: number) => {
     const rest = !!d.rest
     const meals: Record<string, any> = {}
     for (const m of MEALS) {
@@ -253,6 +259,39 @@ function fallbackPlan(input: any, w: number, h: number, female: boolean) {
   }
 }
 
+// 피할 음식(쉼표 구분)과 대표 파생 식품이 식단에 들어갔는지 검사
+const DERIVED: Record<string, string[]> = {
+  우유: ['우유', '요거트', '요구르트', '치즈', '버터', '유청', '프로틴 쉐이크', '단백질 쉐이크', '라떼'],
+  유제품: ['우유', '요거트', '요구르트', '치즈', '버터', '유청', '프로틴 쉐이크', '단백질 쉐이크', '라떼'],
+  땅콩: ['땅콩'], 견과: ['견과', '아몬드', '호두', '땅콩', '캐슈'], 계란: ['계란', '달걀', '마요'], 달걀: ['계란', '달걀', '마요'],
+  밀가루: ['밀가루', '빵', '토스트', '면', '파스타', '라면'], 갑각류: ['새우', '게', '랍스터'], 새우: ['새우'], 해산물: ['새우', '오징어', '조개', '굴', '게', '생선'],
+}
+function avoidHits(plan: any, avoid: string) {
+  const terms = String(avoid || '').split(/[,\s/·]+/).map((t) => t.trim()).filter((t) => t.length >= 1)
+  if (!terms.length) return []
+  const words = new Set<string>()
+  for (const t of terms) (DERIVED[t] || [t]).forEach((w) => words.add(w))
+  const hits = new Set<string>()
+  for (const d of plan.days) for (const m of Object.values(d.meals) as any[])
+    for (const w of words) if (m.menu.includes(w)) hits.add(w)
+  return [...hits]
+}
+
+// 그래도 남은 피할 음식은 서버에서 직접 제거 (괄호 설명 → 해당 항목 순서로 삭제, 비면 대체 메뉴)
+function sanitizeAvoid(plan: any, avoid: string) {
+  const hits = avoidHits(plan, avoid)
+  if (!hits.length) return plan
+  const has = (t: string) => hits.some((w) => t.includes(w))
+  const SAFE = ['삶은 고구마', '제철 과일', '방울토마토', '현미밥', '두부구이', '채소 샐러드']
+  for (const d of plan.days) for (const m of Object.values(d.meals) as any[]) {
+    if (!has(m.menu)) continue
+    let t = m.menu.replace(/\([^)]*\)/g, (g: string) => (has(g) ? '' : g))
+    const parts = t.split(/[,+]/).map((x: string) => x.trim()).filter((x: string) => x && !has(x))
+    m.menu = parts.length ? parts.join(', ') : SAFE.filter((x) => !has(x)).slice(0, 2).join(', ')
+  }
+  return plan
+}
+
 app.post('/api/ai-plans/generate', async (c) => {
   const uid = c.get('uid'), DB = c.env.DB
   const used = await DB.prepare("SELECT COUNT(*) n FROM ai_plans WHERE user_id=? AND date(created_at)=date('now')").bind(uid).first<any>()
@@ -317,7 +356,8 @@ ${profile}
 - type은 반드시 다음 중 하나: ${WORKOUT_TYPES.join(', ')}
 - exercises는 운동일에 3~6개, detail은 "12회 × 3세트", "20분" 같은 짧은 형식.
 - meals는 매일 아침/점심/저녁/간식, 한국인이 쉽게 구할 수 있는 메뉴로 짧게(예: "현미밥, 닭가슴살 샐러드"). 하루 합계가 daily_kcal에 가깝게.
-- 피할 음식은 절대 넣지 마세요. 의학적 진단·처방은 하지 마세요.
+- 피할 음식과 그 가공품·파생 식품(예: 우유 → 요거트·치즈·버터·유청 단백질/프로틴 쉐이크, 땅콩 → 땅콩버터·땅콩 소스, 밀가루 → 빵·면)은 메뉴에 절대 넣지 마세요. 메뉴 이름에 "OO 제외", "OO 대신" 같은 설명도 쓰지 말고 처음부터 다른 음식으로 짜세요.
+- 의학적 진단·처방은 하지 마세요. 메뉴와 운동 설명은 짧게 쓰세요.
 
 반드시 아래 JSON 형식으로만 한국어로 답하세요:
 {"summary":"이번 주 계획 핵심 한두 문장","daily_kcal":0,"macros":{"carbs":0,"protein":0,"fat":0},
@@ -330,18 +370,27 @@ ${profile}
   let plan: any, aiError = ''
   try {
     if (!c.env.OPENAI_API_KEY) throw new Error('no key')
-    const r = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.env.OPENAI_API_KEY}` },
-      body: JSON.stringify({
-        model: 'gpt-5-mini', reasoning_effort: 'low',
-        response_format: { type: 'json_object' },
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-    if (!r.ok) throw new Error(`AI 응답 오류 (${r.status})`)
-    const data: any = await r.json()
-    plan = { ...normalizePlan(JSON.parse(data.choices?.[0]?.message?.content || '{}'), input.start_date), source: 'ai' }
+    let lastErr: any
+    for (let attempt = 0; attempt < 2 && !plan; attempt++) { // 형식이 틀리거나 피할 음식이 들어가면 1번 더 시도
+      try {
+        const r = await fetch(`${base}/chat/completions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.env.OPENAI_API_KEY}` },
+          body: JSON.stringify({
+            model: 'gpt-5-mini', reasoning_effort: 'low',
+            response_format: { type: 'json_object' },
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        })
+        if (!r.ok) { lastErr = new Error(`AI 응답 오류 (${r.status})`); if (r.status === 401 || r.status === 429) break; continue }
+        const data: any = await r.json()
+        const cand = { ...normalizePlan(JSON.parse(data.choices?.[0]?.message?.content || '{}'), input.start_date), source: 'ai' }
+        const bad = avoidHits(cand, input.avoid)
+        if (bad.length && attempt === 0) { lastErr = new Error('피할 음식 포함: ' + bad.join(', ')); continue }
+        plan = sanitizeAvoid(cand, input.avoid)
+      } catch (e) { lastErr = e }
+    }
+    if (!plan) throw lastErr || new Error('AI 계획 생성 실패')
   } catch (e: any) {
     aiError = String(e?.message || e)
     if (b.no_fallback) return c.json({ error: 'AI 계획 생성에 실패했습니다. 잠시 후 다시 시도해주세요.' }, 502)
