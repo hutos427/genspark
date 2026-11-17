@@ -41,6 +41,10 @@
 - **스크립트**: `migrations/0001_init.sql`(기본 테이블), `migrations/0002_meal_photo.sql`(AI 사진용 컬럼 추가), `migrations/0003_ai_plans.sql`(AI 1주 계획 `ai_plans` 테이블 + `schedules.plan_id`)
 
 ### 관계도 (ERD)
+![GoldenCare ERD](docs/erd/goldencare_erd.png)
+
+- 그림 원본: `docs/erd/goldencare_erd.png`, `goldencare_erd.svg` (실제 배포 DB 구조 기준, Graphviz `docs/erd/goldencare_erd.dot`)
+
 ```mermaid
 erDiagram
     users ||--o{ sessions : "로그인"
@@ -50,6 +54,8 @@ erDiagram
     users ||--o{ meals : "식단"
     users ||--o{ inbody : "인바디"
     users ||--o{ goals : "목표"
+    users ||--o{ ai_plans : "AI 계획"
+    ai_plans |o--o{ schedules : "캘린더 등록(plan_id)"
 
     users {
         INTEGER id PK
@@ -77,6 +83,7 @@ erDiagram
         TEXT title "제목"
         TEXT memo "메모"
         INTEGER done "완료 0/1"
+        INTEGER plan_id FK "AI 계획 번호"
     }
     sleep_logs {
         INTEGER id PK
@@ -135,6 +142,18 @@ erDiagram
         TEXT unit "단위"
         INTEGER done "달성 여부"
     }
+
+    ai_plans {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT start_date "시작일"
+        TEXT goal "목표"
+        TEXT level "운동 수준"
+        TEXT input "입력 조건(JSON)"
+        TEXT plan "AI 계획(JSON)"
+        INTEGER applied "캘린더 등록 여부"
+        DATETIME created_at "생성일"
+    }
 ```
 
 ### 테이블과 사용 화면
@@ -153,7 +172,7 @@ erDiagram
 ### 설계 내용
 - 회원 1명 : 기록 여러 개 구조. 모든 기록은 `user_id`로 회원과 연결되며, 서버에서 본인 데이터만 접근하도록 제한합니다.
 - 비밀번호는 PBKDF2-SHA256(10만 회) + salt 해시로만 저장하고, 세션은 HttpOnly 쿠키(30일)입니다.
-- 각 기록 테이블에 `(user_id, date)` 인덱스, `goals`에 `(user_id, kind)` 인덱스가 있습니다.
+- 각 기록 테이블에 `(user_id, date)` 인덱스, `goals`에 `(user_id, kind)`, `ai_plans`에 `(user_id, created_at)` 인덱스가 있습니다 (총 7개).
 - `goals`는 `kind` 값으로 장기 목표와 월별 목표를 함께 관리합니다.
 
 ## 분석 산출물
