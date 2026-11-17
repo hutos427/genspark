@@ -41,9 +41,7 @@
 - **스크립트**: `migrations/0001_init.sql`(기본 테이블), `migrations/0002_meal_photo.sql`(AI 사진용 컬럼 추가), `migrations/0003_ai_plans.sql`(AI 1주 계획 `ai_plans` 테이블 + `schedules.plan_id`)
 
 ### 관계도 (ERD)
-![GoldenCare ERD](docs/erd/goldencare_erd.png)
-
-- 그림 원본: `docs/erd/goldencare_erd.png`, `goldencare_erd.svg` (실제 배포 DB 구조 기준, Graphviz `docs/erd/goldencare_erd.dot`)
+- 발표용 그림: `docs/erd/goldencare_erd.svg` (실제 배포 DB 구조 기준, Graphviz 원본 `docs/erd/goldencare_erd.dot`)
 
 ```mermaid
 erDiagram
